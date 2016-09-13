@@ -1,0 +1,319 @@
+C51 COMPILER V7.06   RX                                                                    06/23/2015 12:31:47 PAGE 1   
+
+
+C51 COMPILER V7.06, COMPILATION OF MODULE RX
+OBJECT MODULE PLACED IN .\OBJ\rx.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE rx.c LARGE BROWSE DEBUG OBJECTEXTEND PRINT(.\LIST\rx.lst) OBJECT(.\OBJ\rx.o
+                    -bj)
+
+stmt level    source
+
+   1          //接收设备
+   2          #include<stdio.h>
+   3          #include"rx.h"
+   4          
+   5          /*按键及状态灯(P3^0~7)*/
+   6          sbit UPPER_TH_PLUS_KEY=P3^5;//上限阈值增按键
+   7          sbit UPPER_TH_MINUS_KEY=P3^6;//上限阈值减按键
+   8          sbit LOWER_TH_PLUS_KEY=P3^4;//下限阈值增按键
+   9          sbit LOWER_TH_MINUS_KEY=P3^7;//下限阈值减按键
+  10          sbit SENSOR_HEIGHT_PLUS_KEY=P1^3;//传感器安装高度增按键
+  11          sbit SENSOR_HEIGHT_MINUS_KEY=P1^1;//传感器安装高度减按键
+  12          sbit MODE_SETTING_KEY=P1^2;//测量模式设置按键
+  13          sbit BEEP_SETTING_KEY=P1^0;//蜂鸣器设置按键
+  14          sbit FULL_YELLOW_LED=P1^5;//状态指示:水位高于阈值上限
+  15          sbit EMPTY_RED_LED=P1^4;//状态指示:水位低于阈值下限
+  16          sbit NORMAL_GREEN_LED=P1^6;//状态指示:水位正常
+  17          sbit CURRENT_POWER_STATE=P1^7;//当前电源状态
+  18          sbit BEEP=P3^3;//蜂鸣器
+  19          
+  20          #define ON 1    //定义电源状态开
+  21          #define OFF 0   //定义电源状态关
+  22          
+  23          #define KEY_UP 1        //定义按键弹起
+  24          #define KEY_DOWN 0      //定义按键按下
+  25          
+  26          #define STATE_FULL              1               //定义满状态
+  27          #define STATE_EMPTY     2               //定义空状态
+  28          #define STATE_NORMAL    3               //定义正常状态
+  29          
+  30          unsigned char CurrentState = STATE_NORMAL;//当前水位状态
+  31          unsigned int UpperTh = 25;//当前上限阈值
+  32          unsigned int LowerTh = 3;//当前下限阈值
+  33          unsigned int SensorHeight = 40;//当前传感器安装高度
+  34          bit CurrentMode = 0;//初始测量模式为非直接测量模式
+  35          bit BeepState = ON;//蜂鸣器初始状态：开
+  36          
+  37          unsigned char key = 0x00;//键值
+  38          
+  39          #define KEY_UTP         0x0C
+  40          #define KEY_UTM         0x42
+  41          #define KEY_LTP         0x18
+  42          #define KEY_LTM         0x52
+  43          #define KEY_SHP         0x5E
+  44          #define KEY_SHM         0x4A
+  45          #define KEY_MODE        0x46
+  46          #define KEY_BEEP        0x47
+  47          
+  48          //接收缓存
+  49          unsigned char RxBuf[RX_PLOAD_WIDTH];
+  50          
+  51          //当前获取到的数据
+  52          unsigned int current = 0;
+  53          
+  54          //前一帧数据
+C51 COMPILER V7.06   RX                                                                    06/23/2015 12:31:47 PAGE 2   
+
+  55          unsigned int prev = 0;
+  56          
+  57          //显示缓存
+  58          unsigned char buf1[17];
+  59          unsigned char buf3[17];
+  60          unsigned char buf5[17];
+  61          unsigned char buf7[17];
+  62          
+  63          //点亮状态灯
+  64          void light(bit full,bit empty,bit normal){
+  65   1              FULL_YELLOW_LED = full;
+  66   1              EMPTY_RED_LED = empty;
+  67   1              NORMAL_GREEN_LED = normal;
+  68   1      }
+  69          //初始化
+  70          void init(){
+  71   1              //初始化电源状态
+  72   1              CURRENT_POWER_STATE = OFF;
+  73   1      
+  74   1              //初始化蜂鸣器
+  75   1              BEEP = OFF;
+  76   1      
+  77   1              //初始化状态指示灯
+  78   1              light(OFF,OFF,OFF);
+  79   1      
+  80   1              //初始化NRF24L01
+  81   1              init_NRF24L01();
+  82   1      
+  83   1              //初始化液晶
+  84   1              initial_lcd();  
+  85   1      
+  86   1              //初始化红外
+  87   1              IR_init();
+  88   1              
+  89   1      }
+  90          //显示logo
+  91          void logo(){
+  92   1              clear_screen();    //clear all dots             
+  93   1              display_GB2312_string(1,1,"水位集中控制系统");
+  94   1              display_string_5x7(5,1,"Created By MobangJack");
+  95   1              display_GB2312_string(7,1,"     启动中     ");
+  96   1              s(2);
+  97   1      }
+  98          //显示缓冲数据
+  99          void display(){ 
+ 100   1              display_GB2312_string(1,1,buf1);
+ 101   1              display_GB2312_string(3,1,buf3);
+ 102   1              display_GB2312_string(5,1,buf5);
+ 103   1              display_GB2312_string(7,1,buf7);
+ 104   1      }
+ 105          //按键音
+ 106          void beepKey(){
+ 107   1              BEEP = ON;
+ 108   1              ms(60);
+ 109   1              BEEP = OFF;
+ 110   1      }
+ 111          char code Tab[16]="0123456789ABCDEF";
+ 112          //响应按键操作
+ 113          void responseKeys(){
+ 114   1              sprintf(buf1,"key:          %c%c",Tab[key/16],Tab[key%16]);
+ 115   1              sprintf(buf3,"%16s","                ");
+ 116   1              sprintf(buf5,"%16s","                ");
+C51 COMPILER V7.06   RX                                                                    06/23/2015 12:31:47 PAGE 3   
+
+ 117   1              sprintf(buf7,"%16s","                ");
+ 118   1              if(key==KEY_UTP||key==KEY_UTM){
+ 119   2                      if(key==KEY_UTP){
+ 120   3                              UpperTh++;
+ 121   3                      }else{
+ 122   3                              UpperTh--;
+ 123   3                      }
+ 124   2                      sprintf(buf3,"%16s","当前水位阈值上限");
+ 125   2                      sprintf(buf5,"%14dcm",UpperTh);
+ 126   2              }else if(key==KEY_LTP||key==KEY_LTM){
+ 127   2                      if(key==KEY_LTP){
+ 128   3                              LowerTh++;
+ 129   3                      }else{
+ 130   3                              LowerTh--;
+ 131   3                      }
+ 132   2                      sprintf(buf3,"%16s","当前水位阈值下限");
+ 133   2                      sprintf(buf5,"%14dcm",LowerTh);
+ 134   2              }else if(key==KEY_SHP||key==KEY_SHM){
+ 135   2                      if(key==KEY_SHP){
+ 136   3                              SensorHeight++;
+ 137   3                      }else{
+ 138   3                              SensorHeight--;
+ 139   3                      }
+ 140   2                      sprintf(buf3,"%16s","当前声呐探头高度");
+ 141   2                      sprintf(buf5,"%14dcm",SensorHeight);
+ 142   2              }else if(key==KEY_MODE){
+ 143   2                      //切换模式
+ 144   2                      CurrentMode=!CurrentMode;
+ 145   2                      sprintf(buf3,"%16s","当前测量模式为：");
+ 146   2                      sprintf(buf5,"%16s",CurrentMode==1?"        直接测量":"        间接测量");
+ 147   2              }else if(key==KEY_BEEP){
+ 148   2                      //打开或关闭蜂鸣器
+ 149   2                      BeepState=!BeepState;
+ 150   2                      sprintf(buf3,"%16s","当前蜂鸣器状态：");
+ 151   2                      sprintf(buf5,"%16s",BeepState==ON?"            打开":"            关闭");
+ 152   2              }
+ 153   1              beepKey();
+ 154   1              display();
+ 155   1              key = 0x00;//清空键值
+ 156   1              ms(40);//维持显示40ms
+ 157   1      }
+ 158          
+ 159          //检测按键
+ 160          bit checkKeys(){
+ 161   1              key = scanIr();
+ 162   1              if(key)
+ 163   1                      return(1);
+ 164   1              else if(UPPER_TH_PLUS_KEY==KEY_DOWN||UPPER_TH_MINUS_KEY==KEY_DOWN||LOWER_TH_PLUS_KEY==KEY_DOWN||LOWER_TH_
+             -MINUS_KEY==KEY_DOWN||SENSOR_HEIGHT_PLUS_KEY==KEY_DOWN||SENSOR_HEIGHT_MINUS_KEY==KEY_DOWN||MODE_SETTING_KEY==KEY_DOWN||BE
+             -EP_SETTING_KEY==KEY_DOWN){
+ 165   2                      ms(5);
+ 166   2                      if(UPPER_TH_PLUS_KEY==KEY_DOWN||UPPER_TH_MINUS_KEY==KEY_DOWN||LOWER_TH_PLUS_KEY==KEY_DOWN||LOWER_TH_MINU
+             -S_KEY==KEY_DOWN||SENSOR_HEIGHT_PLUS_KEY==KEY_DOWN||SENSOR_HEIGHT_MINUS_KEY==KEY_DOWN||MODE_SETTING_KEY==KEY_DOWN||BEEP_S
+             -ETTING_KEY==KEY_DOWN){
+ 167   3                              if(UPPER_TH_PLUS_KEY==KEY_DOWN)
+ 168   3                                      key = KEY_UTP;
+ 169   3                              else if(UPPER_TH_MINUS_KEY==KEY_DOWN)
+ 170   3                                      key = KEY_UTM;
+ 171   3                              else if(LOWER_TH_PLUS_KEY==KEY_DOWN)
+ 172   3                                      key = KEY_LTP;
+ 173   3                              else if(LOWER_TH_MINUS_KEY==KEY_DOWN)
+ 174   3                                      key = KEY_LTM;
+C51 COMPILER V7.06   RX                                                                    06/23/2015 12:31:47 PAGE 4   
+
+ 175   3                              else if(SENSOR_HEIGHT_PLUS_KEY==KEY_DOWN)
+ 176   3                                      key = KEY_SHP;
+ 177   3                              else if(SENSOR_HEIGHT_MINUS_KEY==KEY_DOWN)
+ 178   3                                      key = KEY_SHM;
+ 179   3                              else if(MODE_SETTING_KEY==KEY_DOWN)
+ 180   3                                      key = KEY_MODE;
+ 181   3                              else if(BEEP_SETTING_KEY==KEY_DOWN)
+ 182   3                                      key = KEY_BEEP;
+ 183   3                              return(1);
+ 184   3                      }  
+ 185   2              }
+ 186   1              return(0);
+ 187   1      }
+ 188          //解析数据
+ 189          unsigned int parse(unsigned char* str,unsigned char len){
+ 190   1              unsigned int tmp=0;
+ 191   1              unsigned int k=1;
+ 192   1              while(len--){
+ 193   2                      if(str[len]>='0'&&str[len]<='9'){
+ 194   3                              tmp+=(str[len]-'0')*k;
+ 195   3                              k*=10;
+ 196   3                      }
+ 197   2              }
+ 198   1              return tmp;
+ 199   1      }
+ 200          //报警
+ 201          void beep(){
+ 202   1              BEEP = ON;
+ 203   1              ms(100);
+ 204   1              BEEP = OFF;
+ 205   1      }
+ 206          //全局更新
+ 207          void update(){
+ 208   1              sprintf(buf1,"%16s",CURRENT_POWER_STATE==ON?"电源:         开":"电源:         关");
+ 209   1              sprintf(buf3,"水位:%9dcm",current);
+ 210   1              sprintf(buf5,"占比:%10.0f%%",(((float)current*100)/UpperTh));
+ 211   1              if(current>=UpperTh&&prev>=UpperTh){
+ 212   2                      //切断电源
+ 213   2                      if(CURRENT_POWER_STATE==ON)
+ 214   2                              CURRENT_POWER_STATE = OFF;
+ 215   2      
+ 216   2                      //黄灯亮，表示满
+ 217   2                      light(ON,OFF,OFF);
+ 218   2      
+ 219   2                      sprintf(buf7,"%16s","状态:         满");
+ 220   2      
+ 221   2                      CurrentState = STATE_FULL;
+ 222   2      
+ 223   2              }else if(current<=LowerTh&&prev<=LowerTh){
+ 224   2                      //开启电源
+ 225   2                      if(CURRENT_POWER_STATE==OFF)
+ 226   2                              CURRENT_POWER_STATE = ON;
+ 227   2      
+ 228   2                      //红灯亮，表示空
+ 229   2                      light(OFF,ON,OFF);
+ 230   2      
+ 231   2                      sprintf(buf7,"%16s","状态:         空");
+ 232   2      
+ 233   2                      CurrentState = STATE_EMPTY;
+ 234   2      
+ 235   2              }else{
+ 236   2                      light(OFF,OFF,ON);
+C51 COMPILER V7.06   RX                                                                    06/23/2015 12:31:47 PAGE 5   
+
+ 237   2                      sprintf(buf7,"%16s","状态:       正常");
+ 238   2                      CurrentState = STATE_NORMAL;
+ 239   2              }
+ 240   1              display();
+ 241   1              if(BeepState==ON&&CurrentState!=STATE_NORMAL){
+ 242   2                      beep();
+ 243   2              }
+ 244   1              
+ 245   1      }
+ 246          
+ 247          void rx()
+ 248          {
+ 249   1              //临时交换数据
+ 250   1              unsigned int tmp = 0;
+ 251   1      
+ 252   1              init();         //初始化
+ 253   1      
+ 254   1              logo();         //显示logo
+ 255   1      
+ 256   1              while(1)
+ 257   1              {
+ 258   2                      if(checkKeys()){
+ 259   3                              responseKeys();
+ 260   3                              continue;
+ 261   3                      }       
+ 262   2                      
+ 263   2                      //如果接收成功则刷新显示
+ 264   2                      if(nrf_RxTx('r',RxBuf)){
+ 265   3                              tmp = parse(RxBuf,RX_PLOAD_WIDTH);
+ 266   3                              if(tmp>0){
+ 267   4                                      if(CurrentMode==0){
+ 268   5                                              tmp = SensorHeight-tmp;
+ 269   5                                              tmp = tmp<0?SensorHeight:tmp;
+ 270   5                                      }
+ 271   4                                      prev = current;
+ 272   4                                      current = tmp;
+ 273   4                                      update();
+ 274   4      
+ 275   4                              }else{
+ 276   4                                      continue;
+ 277   4                              }
+ 278   3                      }
+ 279   2                      
+ 280   2                      ms(100);//延时决定采样速率
+ 281   2                      
+ 282   2              }
+ 283   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1698    ----
+   CONSTANT SIZE    =    383    ----
+   XDATA SIZE       =     83      10
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      2       3
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

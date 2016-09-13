@@ -1,0 +1,197 @@
+C51 COMPILER V7.06   NRF24L01                                                              06/23/2015 12:31:48 PAGE 1   
+
+
+C51 COMPILER V7.06, COMPILATION OF MODULE NRF24L01
+OBJECT MODULE PLACED IN .\OBJ\nrf24l01.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE nrf24l01.c LARGE BROWSE DEBUG OBJECTEXTEND PRINT(.\LIST\nrf24l01.lst) OBJEC
+                    -T(.\OBJ\nrf24l01.obj)
+
+stmt level    source
+
+   1          #include<reg52.h>
+   2          #include"delay.h"
+   3          #include"nrf24l01.h"
+   4          
+   5          /*NRF24L01 IO端口定义*/
+   6          sbit CE=P2^3;
+   7          sbit CSN=P2^7;
+   8          sbit SCK=P2^2;
+   9          sbit MOSI=P2^0;
+  10          sbit MISO=P2^1;
+  11          //sbit IRQ=P1^7;
+  12          
+  13          //*****************************NRF24L01的接收和发送地址***********************************//
+  14          unsigned char const TX_ADDRESS[TX_ADR_WIDTH] = {0x34,0x43,0x10,0x10,0x01};      //本地地址
+  15          unsigned char const RX_ADDRESS[RX_ADR_WIDTH] = {0x34,0x43,0x10,0x10,0x01};      //接收地址      
+  16          //****************************************状态标志****************************************//
+  17          unsigned char bdata sta;
+  18          sbit    RX_DR=sta^6;
+  19          sbit    TX_DS=sta^5;
+  20          sbit    MAX_RT=sta^4;
+  21          /****************************************************************************************************
+  22          /*NRF24L01的SPI时序
+  23          /****************************************************************************************************/
+  24          unsigned char SPI_RW(unsigned char num)
+  25          {
+  26   1              unsigned char bit_ctr;
+  27   1              for(bit_ctr=0;bit_ctr<8;bit_ctr++)  // output 8-bit
+  28   1              {
+  29   2                      MOSI = (num & 0x80);            // output 'unsigned char', MSB to MOSI
+  30   2                      num <<= 1;                      // shift next bit into MSB..
+  31   2                      SCK = 1;                        // Set SCK high..
+  32   2                      num |= MISO;                            // capture current MISO bit
+  33   2                      SCK = 0;                            // ..then set SCK low again
+  34   2              }
+  35   1          return(num);                                // return read unsigned char
+  36   1      }
+  37          /****************************************************************************************************
+  38          /*NRF24L01的读寄存器函数
+  39          ****************************************************************************************************/
+  40          unsigned char SPI_Read_Reg(unsigned char reg)
+  41          {
+  42   1              unsigned char reg_val;
+  43   1              
+  44   1              CSN = 0;                // CSN low, initialize SPI communication...
+  45   1              SPI_RW(reg);            // Select register to read from..
+  46   1              reg_val = SPI_RW(0);    // ..then read registervalue
+  47   1              CSN = 1;                // CSN high, terminate SPI communication
+  48   1              
+  49   1              return(reg_val);        // return register value
+  50   1      }
+  51          /****************************************************************************************************/
+  52          /*NRF24L01写寄存器函数
+  53          /****************************************************************************************************/
+  54          unsigned char SPI_Write_Reg(unsigned char reg, unsigned char value)
+C51 COMPILER V7.06   NRF24L01                                                              06/23/2015 12:31:48 PAGE 2   
+
+  55          {
+  56   1              unsigned char status;
+  57   1              CSN = 0;                   // CSN low, init SPI transaction
+  58   1              status = SPI_RW(reg);      // select register
+  59   1              SPI_RW(value);             // ..and write value to it..
+  60   1              CSN = 1;                   // CSN high again
+  61   1              return(status);            // return nRF24L01 status unsigned char
+  62   1      }
+  63          /****************************************************************************************************/
+  64          unsigned char SPI_Read_Buf(unsigned char reg, unsigned char *pBuf, unsigned char bytes)
+  65          {
+  66   1              unsigned char status,byte_ctr;
+  67   1              CSN = 0; // Set CSN low, init SPI tranaction
+  68   1              status = SPI_RW(reg); // Select register to write to and read status byte
+  69   1              for(byte_ctr=0;byte_ctr<bytes;byte_ctr++)
+  70   1              pBuf[byte_ctr] = SPI_RW(0); // Perform SPI_RW to read byte from nRF24L01
+  71   1              CSN = 1; // Set CSN high again
+  72   1              return(status); // return nRF24L01 status byte
+  73   1      }
+  74          /*********************************************************************************************************
+  75          /*写数据：为寄存器地址，pBuf：为待写入数据地址，unsigned chars：写入数据的个数
+  76          /*********************************************************************************************************
+             -/
+  77          unsigned char SPI_Write_Buf(unsigned char reg, unsigned char *pBuf, unsigned char chars)
+  78          {
+  79   1              unsigned char status,char_ctr;
+  80   1              
+  81   1              CSN = 0;            //SPI使能       
+  82   1              status = SPI_RW(reg);   
+  83   1              for(char_ctr=0; char_ctr<chars; char_ctr++) //
+  84   1                      SPI_RW(*pBuf++);
+  85   1              CSN = 1;           //关闭SPI
+  86   1              return(status);    // 
+  87   1      }
+  88          //********************************NRF24L01初始化******************************************//
+  89          void init_NRF24L01()
+  90          {
+  91   1              CE=0;    // 片选使能
+  92   1              CSN=1;   // SPI disable
+  93   1              SCK=0;   // SPI时钟拉低
+  94   1              //IRQ=1;
+  95   1      }
+  96          //检测应答信号
+  97          bit checkAck()
+  98          {
+  99   1              sta = SPI_Read_Reg(STATUS);//读取状态寄存器的值
+ 100   1              if(TX_DS||MAX_RT){
+ 101   2                      SPI_Write_Reg(WRITE_REG+STATUS,0xff);//清除中断标志
+ 102   2                      SPI_Write_Reg(FLUSH_TX,0x00); //清除tx fifo寄存器
+ 103   2                      return(1);
+ 104   2              }
+ 105   1              return(0);
+ 106   1      }
+ 107          //********** nrf收发程序,返回状态标识 **********
+ 108          bit nrf_RxTx(unsigned char mod_nrf,unsigned char *buf) //NRF24L01收发程序       
+ 109          {       
+ 110   1              //******进入发射模式******
+ 111   1              if(mod_nrf == 't')
+ 112   1              {
+ 113   2                      CE = 0;
+ 114   2                      SPI_Write_Buf(WRITE_REG + TX_ADDR, RX_ADDRESS, RX_ADR_WIDTH);     // 装载接收端地址
+ 115   2                      SPI_Write_Buf(WRITE_REG + RX_ADDR_P0, TX_ADDRESS, TX_ADR_WIDTH); //写通道0接收地址    
+C51 COMPILER V7.06   NRF24L01                                                              06/23/2015 12:31:48 PAGE 3   
+
+ 116   2                      SPI_Write_Buf(WR_TX_PLOAD, buf, TX_PLOAD_WIDTH);                        // 装载数据
+ 117   2      
+ 118   2                      //寄存器配置
+ 119   2                      SPI_Write_Reg(WRITE_REG + EN_AA, 0x01);                             //通道0自动应答     
+ 120   2                      SPI_Write_Reg(WRITE_REG + EN_RXADDR, 0x01);                         //允许接收地址频道0 
+ 121   2                      SPI_Write_Reg(WRITE_REG + SETUP_RETR, 0x0a);                                            // 自动重发延时等待250us+86us，自动重发10次
+ 122   2                      SPI_Write_Reg(WRITE_REG + RF_CH, 0x40);                             //设置信道工作频率，收发必须一致
+ 123   2                      SPI_Write_Reg(WRITE_REG + RF_SETUP, 0x07);                               //设置发射速率为1MHZ，发射功率为最大值0d
+             -B        
+ 124   2                      SPI_Write_Reg(WRITE_REG + CONFIG, 0x0e);                                                        //CRC使能，16位CRC校验，上电，接收模式     
+ 125   2                      CE = 1;
+ 126   2                      us(10); //延时10us以上，激发数据发送
+ 127   2      
+ 128   2                      while(1){
+ 129   3                              if(checkAck()){
+ 130   4                                      return(1);
+ 131   4                              }
+ 132   3                      }
+ 133   2                      return(0);
+ 134   2              } 
+ 135   1              //******进入接收模式******
+ 136   1              else if(mod_nrf == 'r')//接收模式
+ 137   1              {
+ 138   2                      CE = 0;
+ 139   2                      SPI_Write_Buf(WRITE_REG + RX_ADDR_P0, TX_ADDRESS, TX_ADR_WIDTH);    //写本地地址
+ 140   2              
+ 141   2                      //寄存器配置
+ 142   2                      SPI_Write_Reg(WRITE_REG + EN_AA, 0x01);                             //通道0自动应答     
+ 143   2                      SPI_Write_Reg(WRITE_REG + EN_RXADDR, 0x01);                         //允许接收地址频道0 
+ 144   2                      SPI_Write_Reg(WRITE_REG + RF_CH, 0x40);                             //设置信道工作频率，收发必须一致
+ 145   2                      SPI_Write_Reg(WRITE_REG + RX_PW_P0, TX_PLOAD_WIDTH);                //设置接收数据长度
+ 146   2                      SPI_Write_Reg(WRITE_REG + RF_SETUP, 0x07);                               //设置发射速率为1MHZ，发射功率为最大值0d
+             -B        
+ 147   2                      SPI_Write_Reg(WRITE_REG + CONFIG, 0x0f);                                                        //CRC使能，16位CRC校验，上电，接收模式  
+ 148   2                      CE = 1;
+ 149   2                      us(130);//延时130us以上，准备接收
+ 150   2      
+ 151   2                      sta = SPI_Read_Reg(STATUS); 
+ 152   2      
+ 153   2                      if(RX_DR){
+ 154   3                              CE = 0;//待机
+ 155   3                              SPI_Write_Reg(WRITE_REG+STATUS,0xff);//清除中断标志
+ 156   3                              SPI_Read_Buf(RD_RX_PLOAD,buf,RX_PLOAD_WIDTH);//读取数据
+ 157   3                              SPI_Write_Reg(FLUSH_RX,0x00);//清除rx fifo寄存器
+ 158   3                              return(1);
+ 159   3                      }
+ 160   2                      return(0);
+ 161   2      
+ 162   2               }      
+ 163   1      
+ 164   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    442    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     10      14
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      1    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+C51 COMPILER V7.06   NRF24L01                                                              06/23/2015 12:31:48 PAGE 4   
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

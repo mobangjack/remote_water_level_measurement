@@ -1,0 +1,100 @@
+C51 COMPILER V7.06   18B20                                                                 05/30/2015 15:40:10 PAGE 1   
+
+
+C51 COMPILER V7.06, COMPILATION OF MODULE 18B20
+OBJECT MODULE PLACED IN .\OBJ\18b20.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE 18b20.c LARGE BROWSE DEBUG OBJECTEXTEND PRINT(.\LIST\18b20.lst) OBJECT(.\OB
+                    -J\18b20.obj)
+
+stmt level    source
+
+   1          /************************************************
+   2           **************DS18B20测温子程序*****************
+   3          ************************************************/
+   4          #include"definition.h"
+   5          #include"delay.h"
+   6          #include"18b20.h"
+   7          
+   8          bit Initialize_DS18B20()//DS18B20初始化及状态检测
+   9          {
+  10   1       bit dat=0;
+  11   1       DQ = 1;        //DQ复位
+  12   1       DelayUs2x(5);   //稍做延时
+  13   1       DQ = 0;         //拉低总线
+  14   1       DelayUs2x(250); //延时480us~960us
+  15   1       DQ = 1;        //拉高总线
+  16   1       DelayUs2x(20); //15~60us 后 接收60-240us的存在脉冲
+  17   1       dat=DQ;        //如果x=0则初始化成功, x=1则初始化失败
+  18   1       DelayUs2x(5); //稍作延时再返回
+  19   1       return dat;
+  20   1      }
+  21          
+  22          
+  23          unsigned char ReadOneChar()//读取一个字节
+  24          {
+  25   1      unsigned char i=0;
+  26   1      unsigned char dat=0;
+  27   1      for (i=8;i>0;i--)
+  28   1       {
+  29   2        DQ = 0; // 拉低总线，产生读信号
+  30   2        dat>>=1;
+  31   2        DQ = 1; // 拉高总线，准备读一位
+  32   2        if(DQ)
+  33   2         dat|=0x80;
+  34   2        DelayUs2x(25);
+  35   2       }
+  36   1       return(dat);
+  37   1      }
+  38          
+  39          void WriteOneChar(unsigned char dat)//写入一个字节
+  40          {
+  41   1       unsigned char i=0;
+  42   1       for (i=8; i>0; i--)
+  43   1       {
+  44   2        DQ = 0;// 拉低总线，准备写一位
+  45   2        DQ = dat&0x01;//写一位
+  46   2        DelayUs2x(30);//延时60us以上
+  47   2        DQ = 1;// 拉高总线
+  48   2        dat>>=1;
+  49   2       }
+  50   1      DelayUs2x(25);
+  51   1      }
+  52          
+  53          /*------------------------------------------------
+  54                              读取温度
+C51 COMPILER V7.06   18B20                                                                 05/30/2015 15:40:10 PAGE 2   
+
+  55          ------------------------------------------------*/
+  56          float ReadTemperature()
+  57          {
+  58   1      float Temperature;
+  59   1      unsigned char LSB=0;
+  60   1      unsigned int MSB=0;
+  61   1      Initialize_DS18B20();//复位
+  62   1      WriteOneChar(0xCC); // 跳过读序号列号的操作
+  63   1      WriteOneChar(0x44); // 启动温度转换
+  64   1      DelayUs2x(10);
+  65   1      Initialize_DS18B20();//复位
+  66   1      WriteOneChar(0xCC); //跳过读序号列号的操作 
+  67   1      WriteOneChar(0xBE); //读取温度寄存器
+  68   1      LSB=ReadOneChar();   //先读温度低字节
+  69   1      MSB=ReadOneChar();   //后读温度高字节
+  70   1      MSB<<=8;
+  71   1      MSB=(unsigned int)(MSB+LSB);
+  72   1      Temperature=(float)(MSB*0.0625);
+  73   1      return Temperature;
+  74   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    218    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----       5
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----       1
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

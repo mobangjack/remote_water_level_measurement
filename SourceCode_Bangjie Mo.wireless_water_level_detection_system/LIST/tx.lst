@@ -1,0 +1,53 @@
+C51 COMPILER V7.06   TX                                                                    06/23/2015 12:31:47 PAGE 1   
+
+
+C51 COMPILER V7.06, COMPILATION OF MODULE TX
+OBJECT MODULE PLACED IN .\OBJ\tx.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE tx.c LARGE BROWSE DEBUG OBJECTEXTEND PRINT(.\LIST\tx.lst) OBJECT(.\OBJ\tx.o
+                    -bj)
+
+stmt level    source
+
+   1          //发射设备
+   2          
+   3          #include"tx.h"
+   4          
+   5          void tx()
+   6          {
+   7   1              unsigned int s=0;
+   8   1              unsigned char TxBuf[TX_PLOAD_WIDTH];//发送缓存
+   9   1      
+  10   1              init_NRF24L01();                //nrf24l01初始化
+  11   1              LCD_Init();    //初始化LCD
+  12   1      
+  13   1              while(1)
+  14   1              {
+  15   2                      s = (unsigned int)measureDistance();
+  16   2      
+  17   2                      TxBuf[0] = s/100%10+'0';
+  18   2                      TxBuf[1] = s/10%10+'0';
+  19   2                      TxBuf[2] = s%10+'0';
+  20   2      
+  21   2                      LCD_Write_String(0,0,TxBuf,TX_PLOAD_WIDTH); //显示测量结果
+  22   2      
+  23   2                      nrf_RxTx('t',TxBuf);//发送数据
+  24   2      
+  25   2                      ms(250);//延时决定采样速率
+  26   2                      ms(250);//延时决定采样速率
+  27   2      
+  28   2              }
+  29   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    144    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----       5
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

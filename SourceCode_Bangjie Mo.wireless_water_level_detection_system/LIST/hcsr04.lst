@@ -1,0 +1,74 @@
+C51 COMPILER V7.06   HCSR04                                                                06/23/2015 12:31:48 PAGE 1   
+
+
+C51 COMPILER V7.06, COMPILATION OF MODULE HCSR04
+OBJECT MODULE PLACED IN .\OBJ\hcsr04.obj
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE hcsr04.c LARGE BROWSE DEBUG OBJECTEXTEND PRINT(.\LIST\hcsr04.lst) OBJECT(.\
+                    -OBJ\hcsr04.obj)
+
+stmt level    source
+
+   1          #include <reg52.h>
+   2          #include "delay.h"
+   3          #include "hcsr04.h"
+   4          
+   5          sbit TRIG = P1^6 ;
+   6          sbit ECHO = P1^5 ;
+   7          
+   8          /*------------------------------------------------
+   9                              初始化定时器0
+  10          ------------------------------------------------*/
+  11          void initTimer0(void)
+  12          {
+  13   1      
+  14   1        TMOD|= 0x01;//定时器0工作方式1
+  15   1        TH0=0x00;    
+  16   1        TL0=0x00; 
+  17   1        ET0=1;
+  18   1        EA=1;
+  19   1      }
+  20          /*------------------------------------------------
+  21                              测距函数
+  22          ------------------------------------------------*/
+  23          float measureDistance()
+  24          {
+  25   1              float s;       //距离变量
+  26   1              initTimer0();    //初始化定时器0
+  27   1              TRIG=1;       //触发信号是高电平脉冲，宽度大于10us
+  28   1              us(10);
+  29   1              TRIG=0;
+  30   1              while(!ECHO); //等待高电平
+  31   1              TR0=1;
+  32   1              while(ECHO);  //等待低电平
+  33   1              TR0=0;
+  34   1              s=TH0*256+TL0;//取出定时器值高8位和低8位合并
+  35   1              s=s/58;       //为什么除以58等于厘米，  Y米=（X秒*344）/2
+  36   1                                   // X秒=（ 2*Y米）/344 -> X秒=0.0058*Y米 -> 厘米=微秒/58 
+  37   1              TH0=0;
+  38   1              TL0=0;        //清除定时器0寄存器中的值
+  39   1              return s;
+  40   1      }
+  41          
+  42          /*------------------------------------------------
+  43                           定时器0中断子程序
+  44          ------------------------------------------------*/
+  45          void Timer0_isr(void) interrupt 1
+  46          {
+  47   1       ECHO=0;
+  48   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    112    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----       4
+C51 COMPILER V7.06   HCSR04                                                                06/23/2015 12:31:48 PAGE 2   
+
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
